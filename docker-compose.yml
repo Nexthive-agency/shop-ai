@@ -6,7 +6,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - DATABASE_URL=mysql://root:password@db:3306/ai_shop
+      - DATABASE_URL=mysql://root:password@db:3309/ai_shop
       - NUXT_SESSION_PASSWORD=minimal_32_karakter_acak_bebas_isi_apasaja
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - MIDTRANS_SERVER_KEY=${MIDTRANS_SERVER_KEY}
@@ -20,7 +20,7 @@ services:
   db:
     image: mysql:8.0
     ports:
-      - "3308:3308" # Local mapping to avoid conflict with host MySQL
+      - "3309:3308" # Local mapping to avoid conflict with host MySQL
     environment:
       - MYSQL_ROOT_PASSWORD=password
       - MYSQL_DATABASE=ai_shop
