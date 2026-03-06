@@ -9,6 +9,8 @@ services:
       - DATABASE_URL=mysql://root:password@db:3306/ai_shop
       - NUXT_SESSION_PASSWORD=minimal_32_karakter_acak_bebas_isi_apasaja
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - NUXT_PUBLIC_SITE_URL=${NUXT_PUBLIC_SITE_URL:-http://localhost:3000}
+      - NUXT_PUBLIC_SITE_NAME=${NUXT_PUBLIC_SITE_NAME:-AI Shop Assistant}
       - MIDTRANS_SERVER_KEY=${MIDTRANS_SERVER_KEY}
       - MIDTRANS_CLIENT_KEY=${MIDTRANS_CLIENT_KEY}
       - MIDTRANS_IS_PRODUCTION=${MIDTRANS_IS_PRODUCTION}

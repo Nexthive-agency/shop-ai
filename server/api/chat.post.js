@@ -121,12 +121,16 @@ ${isAdmin ? 'Bantu user menambahkan produk pertama dengan mengirim JSON:\n{"acti
     })
   }
 
+  const siteUrl = process.env.NUXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+  const siteName = process.env.NUXT_PUBLIC_SITE_NAME || 'AI Shop Assistant'
+
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'http://localhost:3000'
+      'HTTP-Referer': siteUrl,
+      'X-Title': siteName,
+      'Content-Type': 'application/json'
     },
     body: JSON.stringify({
       model: 'openai/gpt-4o-mini',
