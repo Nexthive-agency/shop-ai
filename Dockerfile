@@ -38,7 +38,8 @@ COPY --from=builder /app/node_modules ./node_modules
 
 # Copy entrypoint script
 COPY entrypoint.sh ./
-RUN chmod +x entrypoint.sh
+# Fix Windows line endings (CRLF -> LF)
+RUN sed -i 's/\r$//' entrypoint.sh && chmod +x entrypoint.sh
 
 # Expose the port Nuxt runs on
 EXPOSE 3000
