@@ -3,14 +3,32 @@
     <ToastNotification :toasts="toasts" @remove="removeToast" />
     <div class="flex h-full bg-slate-50 dark:bg-[#0f0f17] text-slate-800 dark:text-zinc-200 transition-colors duration-300 font-sans">
 
+      <!-- ── Mobile Overlay ────────────────────────────────────────────── -->
+      <transition
+        enter-active-class="transition-opacity ease-linear duration-300"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+        leave-active-class="transition-opacity ease-linear duration-300"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
+      >
+        <div 
+          v-if="isMobile && isSidebarOpen" 
+          @click="isSidebarOpen = false"
+          class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-10 md:hidden"
+        ></div>
+      </transition>
+
       <!-- ── Sidebar History ───────────────────────────────────────────── -->
+      <!-- Added absolute positioning and high z-index for mobile overlap -->
       <aside
         :class="[
           'flex-shrink-0 flex flex-col border-r border-slate-200 dark:border-white/[0.06] transition-all duration-300 overflow-hidden',
-          isSidebarOpen ? 'w-64' : 'w-0'
+          'absolute md:relative z-20 h-full bg-slate-50 dark:bg-[#0f0f17] shadow-xl md:shadow-none',
+          isSidebarOpen ? 'w-72 md:w-64' : 'w-0 border-r-0'
         ]"
       >
-        <div class="flex flex-col h-full p-3 gap-2 min-w-[16rem]">
+        <div class="flex flex-col h-full p-3 gap-2 w-72 md:w-64">
           <!-- New Chat Button -->
           <button
             @click="startNewChat"
@@ -48,7 +66,7 @@
               <!-- Delete Button -->
               <button
                 @click.stop="deleteSession(s.id)"
-                class="opacity-0 group-hover:opacity-100 flex-shrink-0 p-0.5 rounded text-slate-400 dark:text-zinc-500 hover:text-red-400 transition mt-0.5"
+                class="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 flex-shrink-0 p-0.5 rounded text-slate-400 dark:text-zinc-500 hover:text-red-400 transition mt-0.5"
               >
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -120,10 +138,10 @@
         </header>
 
         <!-- Chat Container -->
-        <div class="flex flex-col flex-1 w-full max-w-2xl mx-auto px-4 overflow-hidden">
+        <div class="flex flex-col flex-1 w-full max-w-4xl mx-auto px-4 sm:px-6 md:px-8 overflow-hidden">
 
           <!-- Messages -->
-          <div ref="messagesRef" class="flex flex-col flex-1 gap-4 overflow-y-auto py-6 pr-1 scroll-smooth custom-scrollbar">
+          <div ref="messagesRef" class="flex flex-col flex-1 gap-4 overflow-y-auto py-6 pr-1 md:pr-4 scroll-smooth custom-scrollbar">
 
             <!-- Empty state -->
             <div v-if="messages.length === 0" class="flex flex-col items-center justify-center flex-1 gap-3 text-slate-400 dark:text-zinc-600">
@@ -168,7 +186,7 @@
               <div
                 v-else
                 :class="[
-                  'max-w-[78%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed message-content',
+                  'max-w-[85%] md:max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed message-content',
                   msg.role === 'user'
                     ? 'bg-gradient-to-br from-violet-600 to-indigo-600 text-white rounded-tr-sm shadow-md shadow-violet-500/20'
                     : 'bg-white dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.07] text-slate-700 dark:text-zinc-200 rounded-tl-sm shadow-sm'
@@ -201,7 +219,7 @@
           </div>
 
           <!-- Input Area -->
-          <form class="flex gap-2 pt-3 border-t border-slate-200 dark:border-white/[0.06]" @submit.prevent="sendMessage">
+          <form class="flex gap-2 pt-3 pb-4 border-t border-slate-200 dark:border-white/[0.06]" @submit.prevent="sendMessage">
             <div class="relative flex-1 flex items-center">
               <input
                 v-model="input"
@@ -209,7 +227,7 @@
                 placeholder="Tanya tentang produk, tawar harga, atau mau beli..."
                 :disabled="isLoading"
                 autocomplete="off"
-                class="w-full bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.09] rounded-xl px-4 py-2.5 text-sm text-slate-800 dark:text-zinc-200 placeholder-slate-400 dark:placeholder-zinc-600 outline-none focus:border-violet-400 dark:focus:border-violet-500/60 focus:ring-1 focus:ring-violet-400/20 dark:focus:ring-violet-500/20 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-sm pr-10"
+                class="w-full bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.09] rounded-xl px-4 py-3 text-sm text-slate-800 dark:text-zinc-200 placeholder-slate-400 dark:placeholder-zinc-600 outline-none focus:border-violet-400 dark:focus:border-violet-500/60 focus:ring-1 focus:ring-violet-400/20 dark:focus:ring-violet-500/20 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-sm pr-12"
               />
               <button
                 v-if="session?.user?.role === 'admin'"
@@ -275,14 +293,24 @@ const messagesRef = ref(null)
 const fileInput = ref(null)
 const isDark = ref(true)
 const useDatabase = ref(true)
+
+// Sidebar logic
 const isSidebarOpen = ref(true)
+const isMobile = ref(false)
+
+function checkScreenSize() {
+  isMobile.value = window.innerWidth < 768
+  if (isMobile.value) {
+    isSidebarOpen.value = false
+  } else {
+    isSidebarOpen.value = true
+  }
+}
 
 // History state
 const chatSessions = ref([])
 const activeSessionId = ref(null)
 const isLoadingHistory = ref(true)
-
-
 // Toast system
 const toasts = ref([])
 let toastId = 0
@@ -318,10 +346,12 @@ async function loadSession(sessionId) {
   try {
     const data = await $fetch(`/api/history/${sessionId}`)
     activeSessionId.value = data.id
-    // Konversi format DB ke format tampilan
+    // Konversi format DB ke format tampilan, pertahankan type & orderData jika ada
     messages.value = data.messages.map(m => ({
       role: m.role,
       content: m.content,
+      type: m.type || 'text',
+      orderData: m.orderData,
       fromDB: m.role === 'assistant'
     }))
     await nextTick()
@@ -552,6 +582,9 @@ function scrollToBottom() {
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 onMounted(async () => {
+  checkScreenSize()
+  window.addEventListener('resize', checkScreenSize)
+  
   await fetchSessions()
 
   // Jika user baru (belum ada sesi), tampilkan pesan perkenalan dari Nexthive AI
@@ -573,6 +606,10 @@ onMounted(async () => {
       isLoading.value = false
     }
   }
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', checkScreenSize)
 })
 
 </script>

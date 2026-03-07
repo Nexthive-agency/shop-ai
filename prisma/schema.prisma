@@ -27,7 +27,6 @@ model Product {
   // Relasi ke Category
   categoryId  Int?
   category    Category? @relation(fields: [categoryId], references: [id])
-  // Hapus kolom string category lama
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   orders      Order[]
