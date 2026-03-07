@@ -19,6 +19,23 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 400, statusMessage: 'name, price, dan stock wajib diisi' })
     }
 
+    let categoryId = null
+
+    if (category && category.trim() !== '') {
+      const catName = category.trim()
+      // Cari kategori atau buat baru jika belum ada
+      let catRecord = await prisma.category.findFirst({
+        where: { name: { equals: catName } }
+      })
+
+      if (!catRecord) {
+        catRecord = await prisma.category.create({
+          data: { name: catName }
+        })
+      }
+      categoryId = catRecord.id
+    }
+
     const product = await prisma.product.create({
       data: {
         name,
@@ -26,7 +43,7 @@ export default defineEventHandler(async (event) => {
         price: parseFloat(price),
         minPrice: parseFloat(minPrice || price * 0.8), // default: 80% dari harga
         stock: parseInt(stock),
-        category: category || null,
+        categoryId,
         imageUrl: imageUrl || null
       }
     })

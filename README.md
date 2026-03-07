@@ -12,11 +12,15 @@ Sebuah aplikasi toko AI cerdas yang memungkinkan pengguna untuk mencari produk, 
 ## ✨ Fitur Utama
 
 - **🛒 Smart AI Chatbot**: Bertanya tentang produk menggunakan bahasa natural (Indonesian). AI terhubung langsung ke database stok.
+- **🗂️ Persistent History & Context Memory**: Riwayat obrolan setiap user disimpan ke database. AI memiliki "Short-term Memory" (Sliding Window) yang presisi sehingga tetap ingat konteks meski user membalas pendek (misal: "Boleh deh yang itu").
 - **🤝 Live Bargaining (Nego)**: Pengguna bisa menawar harga produk. AI akan memutuskan deal berdasarkan batas `minPrice` yang ditentukan admin.
 - **💳 Midtrans Integration**: Checkout langsung di dalam chat. Setelah harga deal, AI akan menampilkan form order dan link pembayaran Snap Midtrans.
-- **🔐 Authentication & Roles**: Sistem login terenkripsi.
-  - **Admin**: Bisa menambah produk baru langsung melalui perintah chat.
-  - **User**: Bisa mencari, menawar, dan membeli produk.
+- **🔐 Authentication & Roles**: Sistem login aman dan terenkripsi menggunakan argon2id.
+  - **Admin**: 
+    - Bisa menambah produk tunggal melalui chat.
+    - **[NEW] Bulk Excel/CSV Import**: Mengunggah file `.xlsx` atau `.csv` di kolom chat. Sistem pintar membaca variasi header kolom seperti *"Harga (IDR)"*, *"Nama Produk"*, atau *"Stok"*.
+    - **[NEW] Category Management**: Memerintahkan AI untuk membuat kategori produk baru secara dinamis.
+  - **User**: Bisa mencari, menawar, membeli produk, dan melanjutkan histori pesan pesanan.
 - **🏠 Premium Landing Page**: Antarmuka modern dengan akses langsung ke fitur chat setelah login.
 - **🌙 Dark Mode Design**: Tampilan premium dengan nuansa gelap dan efek *glassmorphism*.
 - **📦 Docker Ready**: Aplikasi siap dideploy ke server menggunakan Docker & Docker Compose.
@@ -27,10 +31,12 @@ Sebuah aplikasi toko AI cerdas yang memungkinkan pengguna untuk mencari produk, 
 
 - **Frontend & Backend**: [Nuxt 4](https://nuxt.com/)
 - **Database**: [MySQL](https://www.mysql.com/) + [Prisma ORM](https://www.prisma.io/)
-- **AI Engine**: [OpenRouter API](https://openrouter.ai/) (GPT-4o mini)
+- **AI Engine**: [OpenRouter API](https://openrouter.ai/) (Misal: openai/gpt-4o-mini, stepfun/step-3.5-flash)
 - **Payment Gateway**: [Midtrans (Snap)](https://midtrans.com/)
 - **Auth**: [nuxt-auth-utils](https://github.com/Atinux/nuxt-auth-utils)
+- **File Parsing**: [ExcelJS](https://github.com/exceljs/exceljs) (untuk impor produk bulk)
 - **Styling**: [Tailwind CSS](https://tailwindcss.com/)
+
 
 ---
 

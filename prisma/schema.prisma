@@ -9,27 +9,57 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Category {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  products  Product[]
+  createdAt DateTime  @default(now())
+}
+
 model Product {
-  id          Int      @id @default(autoincrement())
+  id          Int       @id @default(autoincrement())
   name        String
-  description String?  @db.Text
+  description String?   @db.Text
   price       Float
-  minPrice    Float    @default(0)
-  stock       Int      @default(0)
+  minPrice    Float     @default(0)
+  stock       Int       @default(0)
   imageUrl    String?
-  category    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  // Relasi ke Category
+  categoryId  Int?
+  category    Category? @relation(fields: [categoryId], references: [id])
+  // Hapus kolom string category lama
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   orders      Order[]
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
+  id        Int           @id @default(autoincrement())
   name      String
-  email     String   @unique
+  email     String        @unique
   password  String
-  role      String   @default("user")
-  createdAt DateTime @default(now())
+  role      String        @default("user")
+  createdAt DateTime      @default(now())
+  sessions  ChatSession[]
+}
+
+model ChatSession {
+  id        Int           @id @default(autoincrement())
+  userId    Int
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String        @default("Chat Baru")
+  messages  ChatMessage[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+model ChatMessage {
+  id        Int         @id @default(autoincrement())
+  sessionId Int
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role      String      // "user" | "assistant"
+  content   String      @db.Text
+  createdAt DateTime    @default(now())
 }
 
 model Order {

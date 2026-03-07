@@ -11,15 +11,21 @@ export default defineEventHandler(async (event) => {
             OR: [
               { name: { contains: search } },
               { description: { contains: search } },
-              { category: { contains: search } }
+              { category: { is: { name: { contains: search } } } }
             ]
           }
         : undefined,
+      include: { category: true },
       orderBy: { createdAt: 'desc' },
       take: 20
     })
 
-    return products
+    // Flatten category untuk kompatibilitas frontend lama
+    return products.map(p => ({
+      ...p,
+      categoryName: p.category?.name ?? null
+    }))
+
   } catch (error) {
     console.error('API Products Error:', error)
     throw createError({

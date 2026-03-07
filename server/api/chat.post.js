@@ -10,60 +10,114 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  // Validasi session user yang login
+  const userSession = await getUserSession(event)
+  if (!userSession?.user?.id) {
+    throw createError({ statusCode: 401, message: 'Unauthorized' })
+  }
+  const userId = userSession.user.id
+
   const body = await readBody(event)
-  const { messages, useDatabase, userRole, userName } = body || {}
+  const { message, sessionId: incomingSessionId, useDatabase, userRole, userName } = body || {}
   const isAdmin = userRole === 'admin'
 
-  if (!messages?.length) {
+  if (!message?.trim()) {
     throw createError({
       statusCode: 400,
-      message: 'Messages diperlukan'
+      message: 'message diperlukan'
     })
   }
 
-  // System messages awal
+  // ── 1. KELOLA SESI CHAT ───────────────────────────────────────────────────
+  let chatSession
+
+  if (incomingSessionId) {
+    // Lanjutkan sesi yang sudah ada, verifikasi kepemilikan
+    chatSession = await prisma.chatSession.findFirst({
+      where: { id: parseInt(incomingSessionId), userId }
+    })
+    if (!chatSession) {
+      throw createError({ statusCode: 404, message: 'Sesi chat tidak ditemukan' })
+    }
+  } else {
+    // Buat sesi baru — judul diambil dari pesan pertama user (max 60 karakter)
+    const title = message.trim().slice(0, 60) + (message.length > 60 ? '…' : '')
+    chatSession = await prisma.chatSession.create({
+      data: { userId, title }
+    })
+  }
+
+  const activeSessionId = chatSession.id
+
+  // ── 2. SLIDING WINDOW — Ambil 10 pesan terakhir dari DB ──────────────────
+  const recentDbMessages = await prisma.chatMessage.findMany({
+    where: { sessionId: activeSessionId },
+    orderBy: { createdAt: 'desc' },
+    take: 10
+  })
+  // Balik urutan agar dari yang paling lama ke paling baru
+  const historyMessages = recentDbMessages.reverse().map(m => ({
+    role: m.role,
+    content: m.content
+  }))
+
+  // ── 3. BANGUN SYSTEM PROMPT ───────────────────────────────────────────────
   const systemMessages = []
 
-  // Jika mode database aktif, cari data relevan dari DB
   if (useDatabase) {
     try {
-      // Ambil pesan terakhir user
-      const lastUserMessage = [...messages].reverse().find(m => m.role === 'user')
-      const userQuery = lastUserMessage?.content || ''
-
-      // Ekstrak kata kunci (buang kata-kata umum / stop words sederhana)
-      const stopWords = ['berapa', 'harga', 'ada', 'cari', 'tampilkan', 'apa', 'saja', 'di', 'pada', 'siapa', 'yang', 'dimana']
-      const keywords = userQuery.toLowerCase()
-        .replace(/[^\w\s]/g, '') // hapus tanda baca
+      const stopWords = ['berapa', 'harga', 'ada', 'cari', 'tampilkan', 'apa', 'saja', 'di', 'pada', 'siapa', 'yang', 'dimana', 'aku', 'mau', 'beli', 'satu', 'itu', 'deh', 'kamu']
+      
+      // Kumpulkan konteks dari riwayat: ambil 3 pesan terakhir user ditambah pesan saat ini
+      const recentUserHistory = historyMessages
+        .filter(m => m.role === 'user')
+        .slice(-3)
+        .map(m => m.content)
+        .join(' ')
+      const contextText = `${recentUserHistory} ${message}`.toLowerCase()
+      
+      const keywords = contextText
+        .replace(/[^\w\s]/g, '')
         .split(/\s+/)
         .filter(word => word.length > 2 && !stopWords.includes(word))
+        // Buang kata kunci duplikat
+        .filter((word, index, self) => self.indexOf(word) === index)
 
-      // Cari produk di DB menggunakan keywords
+      // Ambil daftar kategori saat ini
+      const categories = await prisma.category.findMany({
+        orderBy: { name: 'asc' }
+      })
+      const categoryNames = categories.map(c => c.name).join(', ')
+
       const products = await prisma.product.findMany({
         where: keywords.length > 0 ? {
           OR: [
             ...keywords.map(kw => ({ name: { contains: kw } })),
             ...keywords.map(kw => ({ description: { contains: kw } })),
-            ...keywords.map(kw => ({ category: { contains: kw } }))
+            // Cari berdasarkan nama kategori (relasi, bukan string langsung)
+            ...keywords.map(kw => ({ category: { is: { name: { contains: kw } } } }))
           ]
         } : undefined,
+        include: { category: true },
         take: 10,
         orderBy: { createdAt: 'desc' }
       })
 
-      // Jika tidak ada hasil spesifik, ambil produk terbaru sebagai konteks umum
       const contextData = products.length > 0
         ? products
-        : await prisma.product.findMany({ take: 15, orderBy: { createdAt: 'desc' } })
+        : await prisma.product.findMany({ include: { category: true }, take: 15, orderBy: { createdAt: 'desc' } })
 
       if (contextData.length > 0) {
-        const dbContext = contextData.map(p =>
-          `- [ID: ${p.id}] ${p.name} | HARGA: Rp${p.price.toLocaleString('id-ID')} | STOK: ${p.stock} | KATEGORI: ${p.category || '-'} | DESKRIPSI: ${p.description || '-'}`
-        ).join('\n')
+        const dbContext = contextData.map(p => {
+          const catName = p.category ? p.category.name : '-'
+          return `- [ID: ${p.id}] ${p.name} | HARGA: Rp${p.price.toLocaleString('id-ID')} | STOK: ${p.stock} | KATEGORI: ${catName} | DESKRIPSI: ${p.description || '-'}`
+        }).join('\n')
 
         systemMessages.push({
           role: 'system',
-          content: `Kamu adalah asisten toko AI yang cerdas bernama AI Shop Assistant.
+          content: `Kamu adalah asisten toko AI bernama **Nexthive AI**.
+Kamu ditenagai oleh model bahasa dari OpenRouter dan dikembangkan oleh **Umar Abdul Aziz** (alias **NanoKyuuun**).
+Jika ada yang bertanya siapa kamu, siapa yang membuat kamu, atau model apa yang kamu pakai, jawab dengan informasi ini secara ramah.
 Kamu sedang berbicara dengan ${userName || 'User'}. Sapa dia dengan ramah.
 Kamu memiliki ${isAdmin ? 'EMPAT' : 'TIGA'} peran:
 
@@ -79,11 +133,14 @@ Kamu memiliki ${isAdmin ? 'EMPAT' : 'TIGA'} peran:
   - Jika user setuju harga, respons HANYA dengan JSON:
 {"action":"show_order_form","productId":ID,"quantity":1,"productName":"NAMA","negotiatedPrice":HARGA_DEAL}
 
-${isAdmin ? `**PERAN 3 - Tambah Produk (Admin):**
-- Jika user ingin tambah produk baru ("tambah produk", "tambahkan produk", "input produk", "masukkan produk baru"), ekstrak data dan respons HANYA dengan JSON:
+${isAdmin ? `**PERAN 3 - Manajemen Toko (Admin):**
+- **Daftar Kategori Saat Ini**: ${categoryNames || 'Belum ada kategori'}
+- Jika user ingin **menambah kategori baru**, respons HANYA dengan JSON:
+{"action":"create_category","name":"NAMA_KATEGORI"}
+- Jika user ingin **tambah produk baru**, ekstrak data dan respons HANYA dengan JSON:
 {"action":"create_product","name":"NAMA","description":"DESKRIPSI","price":HARGA,"minPrice":HARGA_MIN,"stock":STOK,"category":"KATEGORI"}
-- Jika ada info yang kurang, tanyakan dulu sebelum kirim JSON.
-- Jika minPrice tidak disebutkan, gunakan 80% dari price.
+- Penting untuk Tambah Produk: Gunakan daftar kategori yang ada. Jika kategori yang diminta belum ada, gunakan kategori baru dari input user. Jika minPrice tidak disebutkan, hitung 80% dari price.
+- Jika user **mengunggah file Excel (Bulk Import)**, sistem akan mengirimkan pesan berisi "HASIL IMPORT EXCEL...". Tugasmu adalah merangkum hasil tersebut: beri selamat atas yang berhasil, dan sebutkan rincian baris mana saja yang gagal beserta alasannya. JANGAN balas dengan JSON, balas dengan teks ramah.
 
 **PERAN 4 - Deteksi Niat Beli:**` : `**PERAN 3 - Deteksi Niat Beli:**
 - Jika user bertanya apakah bisa tambah produk atau ingin menambahkan produk, jawab: "Maaf, hanya admin yang bisa menambahkan produk baru ke sistem kami."
@@ -101,14 +158,17 @@ Jawab Bahasa Indonesia yang ramah dan informatif. Gunakan emoji sesekali.`
       } else {
         systemMessages.push({
           role: 'system',
-          content: `Kamu adalah AI Shop Assistant. Kamu sedang berbicara dengan ${userName || 'User'}.
+          content: `Kamu adalah asisten toko AI bernama **Nexthive AI**, ditenagai oleh model bahasa dari OpenRouter dan dikembangkan oleh **Umar Abdul Aziz** (alias **NanoKyuuun**).
+Jika ada yang bertanya siapa kamu, siapa yang membuat kamu, atau model apa yang kamu pakai, jawab dengan informasi ini secara ramah.
+Kamu sedang berbicara dengan ${userName || 'User'}.
 DATABASE SAAT INI KOSONG.
-${isAdmin ? 'Bantu user menambahkan produk pertama dengan mengirim JSON:\n{"action":"create_product","name":"NAMA","description":"DESKRIPSI","price":HARGA,"minPrice":HARGA_MIN,"stock":STOK,"category":"KATEGORI"}' : 'Maaf, database toko sedang kosong. Silakan hubungi admin untuk menambahkan produk baru.'}`
+${isAdmin ? `Bantu user menambahkan kategori atau produk pertama. 
+Jika ingin buat kategori baru: {"action":"create_category","name":"NAMA_KATEGORI"}
+Jika ingin buat produk baru: {"action":"create_product","name":"NAMA","description":"DESKRIPSI","price":HARGA,"minPrice":HARGA_MIN,"stock":STOK,"category":"KATEGORI"}` : 'Maaf, database toko sedang kosong. Silakan hubungi admin untuk menambahkan produk baru.'}`
         })
       }
     } catch (dbError) {
       logger.error('CHAT', 'DB Error saat ambil konteks produk', dbError)
-      // Jika DB error, lanjutkan tanpa konteks DB
       systemMessages.push({
         role: 'system',
         content: 'Kamu adalah asisten AI yang membantu. Jawab dalam Bahasa Indonesia.'
@@ -121,8 +181,15 @@ ${isAdmin ? 'Bantu user menambahkan produk pertama dengan mengirim JSON:\n{"acti
     })
   }
 
+  // ── 4. PANGGIL OPENROUTER (model: stepfun/step-3.5-flash:free = free tier) ────────────
   const siteUrl = process.env.NUXT_PUBLIC_SITE_URL || 'http://localhost:3000'
   const siteName = process.env.NUXT_PUBLIC_SITE_NAME || 'AI Shop Assistant'
+
+  const aiMessages = [
+    ...systemMessages,
+    ...historyMessages,
+    { role: 'user', content: message }
+  ]
 
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
@@ -133,8 +200,8 @@ ${isAdmin ? 'Bantu user menambahkan produk pertama dengan mengirim JSON:\n{"acti
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      model: 'openai/gpt-4o-mini',
-      messages: [...systemMessages, ...messages],
+      model: 'stepfun/step-3.5-flash:free',
+      messages: aiMessages,
       stream: false
     })
   })
@@ -148,9 +215,26 @@ ${isAdmin ? 'Bantu user menambahkan produk pertama dengan mengirim JSON:\n{"acti
   }
 
   const data = await response.json()
+  const aiResponseContent = data.choices?.[0]?.message?.content || ''
+
+  // ── 5. SIMPAN PESAN KE DB ─────────────────────────────────────────────────
+  await prisma.chatMessage.createMany({
+    data: [
+      { sessionId: activeSessionId, role: 'user', content: message },
+      { sessionId: activeSessionId, role: 'assistant', content: aiResponseContent }
+    ]
+  })
+
+  // Update updatedAt pada sesi agar muncul paling atas di daftar history
+  await prisma.chatSession.update({
+    where: { id: activeSessionId },
+    data: { updatedAt: new Date() }
+  })
+
   return {
-    message: data.choices?.[0]?.message?.content || '',
+    message: aiResponseContent,
     usage: data.usage,
-    usedDatabase: useDatabase
+    usedDatabase: useDatabase,
+    sessionId: activeSessionId  // Kembalikan sessionId ke frontend
   }
 })
