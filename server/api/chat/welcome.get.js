@@ -1,47 +1,49 @@
 import prisma from '../../utils/prisma'
 
 export default defineEventHandler(async (event) => {
+  // ── VALIDASI KONFIGURASI ──────────────────────────────────────────────────
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) {
     throw createError({ statusCode: 500, message: 'OPENROUTER_API_KEY tidak dikonfigurasi.' })
   }
 
+  const model = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.1-8b-instruct:free'
+
+  // ── VALIDASI SESSION ──────────────────────────────────────────────────────
   const userSession = await getUserSession(event)
   if (!userSession?.user?.id) {
     throw createError({ statusCode: 401, message: 'Unauthorized' })
   }
-  const userId = userSession.user.id
+
+  const userId   = userSession.user.id
   const userName = userSession.user.name || 'User'
   const userRole = userSession.user.role || 'user'
-  const isAdmin = userRole === 'admin'
+  const isAdmin  = userRole === 'admin'
 
-  // Cek apakah user sudah pernah chat sebelumnya
+  // Hanya kirim welcome untuk user yang belum pernah chat
   const existingSessionCount = await prisma.chatSession.count({ where: { userId } })
-  if (existingSessionCount > 0) {
-    // Bukan user baru, tidak perlu welcome message
-    return null
-  }
+  if (existingSessionCount > 0) return null
 
-  // Bangun prompt untuk perkenalan diri AI
-  const welcomePrompt = `Kamu adalah **Nexthive AI**, asisten toko AI yang cerdas.
-Kamu ditenagai oleh model bahasa dari OpenRouter dan dikembangkan oleh **Umar Abdul Aziz** (alias **NanoKyuuun**).
+  // ── BANGUN WELCOME PROMPT ─────────────────────────────────────────────────
+  const welcomePrompt = `Kamu adalah **Nexthive AI**, asisten toko pintar yang dibangun oleh **Umar Abdul Aziz (NanoKyuuun)** dan ditenagai oleh OpenRouter.
 
-User baru bernama **${userName}** baru saja bergabung${isAdmin ? ' sebagai **Admin**' : ''}.
-Tugasmu sekarang: **perkenalkan dirimu secara hangat dan singkat** kepada ${userName}.
+User baru bernama **${userName}**${isAdmin ? ' (Admin)' : ''} baru saja bergabung.
 
-Dalam perkenalan kamu wajib menyebutkan:
-1. Nama kamu: Nexthive AI
-2. Siapa yang mengembangkan kamu: Umar Abdul Aziz (NanoKyuuun), ditenagai OpenRouter
-3. Apa saja yang bisa kamu lakukan:
-   - Menjawab pertanyaan seputar produk (harga, stok, kategori)
-   - Melakukan tawar-menawar harga (nego) secara langsung di chat
-   - Membantu proses pembelian / checkout
-   ${isAdmin ? '- Membantu Admin menambahkan produk baru langsung dari chat' : ''}
+Tugasmu: **perkenalkan dirimu secara hangat, singkat, dan menarik** kepada ${userName}.
+
+Wajib sebutkan dalam perkenalan:
+1. Nama kamu: **Nexthive AI**
+2. Dibuat oleh: **Umar Abdul Aziz (NanoKyuuun)**, ditenagai **OpenRouter**
+3. Yang bisa kamu bantu:
+   - Informasi produk (harga, stok, kategori)
+   - Negosiasi harga secara langsung di chat
+   - Proses pembelian / checkout${isAdmin ? '\n   - Manajemen toko: tambah kategori & produk langsung dari chat' : ''}
 4. Ajak ${userName} untuk mulai bertanya atau mencari produk
 
-Gunakan Bahasa Indonesia yang hangat, santai, dan gunakan emoji yang sesuai. Jangan terlalu panjang.`
+Gaya penulisan: hangat, santai, pakai emoji yang sesuai. Jangan terlalu panjang (maks 5–6 kalimat).`
 
-  const siteUrl = process.env.NUXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+  // ── PANGGIL OPENROUTER ────────────────────────────────────────────────────
+  const siteUrl  = process.env.NUXT_PUBLIC_SITE_URL  || 'http://localhost:3000'
   const siteName = process.env.NUXT_PUBLIC_SITE_NAME || 'AI Shop Assistant'
 
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -49,40 +51,44 @@ Gunakan Bahasa Indonesia yang hangat, santai, dan gunakan emoji yang sesuai. Jan
     headers: {
       'Authorization': `Bearer ${apiKey}`,
       'HTTP-Referer': siteUrl,
-      'X-Title': siteName,
+      'X-Title':      siteName,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      model: 'openrouter/free',
+      model,
       messages: [{ role: 'user', content: welcomePrompt }],
       stream: false
     })
   })
 
   if (!response.ok) {
-    const err = await response.text()
-    throw createError({ statusCode: response.status, message: err || 'Gagal mendapatkan welcome message' })
+    const errText = await response.text()
+    console.error(`[WELCOME] OpenRouter error [HTTP ${response.status}] model: ${model} | ${errText}`)
+    // Jangan crash app — kembalikan null, UI bisa skip welcome message
+    return null
   }
 
-  const data = await response.json()
+  const data           = await response.json()
   const welcomeContent = data.choices?.[0]?.message?.content || ''
 
-  // Buat sesi pertama dan simpan welcome message ke DB
+  if (!welcomeContent) {
+    console.warn('[WELCOME] OpenRouter mengembalikan konten kosong, skip welcome message.')
+    return null
+  }
+
+  // ── SIMPAN SESI DAN WELCOME MESSAGE KE DB ────────────────────────────────
   const chatSession = await prisma.chatSession.create({
     data: {
       userId,
       title: `Selamat datang, ${userName}!`,
       messages: {
-        create: {
-          role: 'assistant',
-          content: welcomeContent
-        }
+        create: { role: 'assistant', content: welcomeContent }
       }
     }
   })
 
   return {
     sessionId: chatSession.id,
-    message: welcomeContent
+    message:   welcomeContent
   }
 })
