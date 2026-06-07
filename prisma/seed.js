@@ -4,26 +4,32 @@ import bcrypt from 'bcryptjs'
 const prisma = new PrismaClient()
 
 async function main() {
-  console.log('🌱 Starting seeding...')
+  console.log('Starting seeding...')
 
-  // ─── USERS ────────────────────────────────────────────────
   const hashedPassword = await bcrypt.hash('password', 12)
 
   const users = [
-    { name: 'Admin Toko',  email: 'admin@toko.com',  role: 'admin' },
-    { name: 'User Biasa',  email: 'user@toko.com',   role: 'user'  },
+    { name: 'Admin Toko', email: 'admin@toko.com', role: 'admin' },
+    { name: 'User Biasa', email: 'user@toko.com', role: 'user' }
   ]
 
-  for (const u of users) {
+  for (const userData of users) {
     const user = await prisma.user.upsert({
-      where:  { email: u.email },
-      update: { name: u.name, role: u.role, password: hashedPassword },
-      create: { ...u, password: hashedPassword }
+      where: { email: userData.email },
+      update: {
+        name: userData.name,
+        role: userData.role,
+        password: hashedPassword
+      },
+      create: {
+        ...userData,
+        password: hashedPassword
+      }
     })
-    console.log(`👤 Upserted ${user.role}: ${user.email}`)
+
+    console.log(`Upserted ${user.role}: ${user.email}`)
   }
 
-  // ─── PRODUCTS ─────────────────────────────────────────────
   const products = [
     {
       name: 'MacBook Pro M3',
@@ -76,32 +82,53 @@ async function main() {
   ]
 
   for (const product of products) {
-    // Upsert by name supaya aman dijalankan berulang kali
-    const p = await prisma.product.upsert({
-      where: { 
-        // Butuh unique field — gunakan nama sebagai identifier
-        // Jika field name belum @unique, pakai firstOrCreate pattern:
-        id: (await prisma.product.findFirst({ where: { name: product.name } }))?.id ?? 0
-      },
-      update: { price: product.price, minPrice: product.minPrice, stock: product.stock },
-      create: product
+    let categoryId = null
+
+    if (product.category) {
+      const category = await prisma.category.upsert({
+        where: { name: product.category },
+        update: {},
+        create: { name: product.category }
+      })
+      categoryId = category.id
+    }
+
+    const existingProduct = await prisma.product.findFirst({
+      where: { name: product.name }
     })
-    console.log(`📦 Upserted product: ${p.name} | Rp${p.price.toLocaleString('id-ID')}`)
+
+    const productData = {
+      name: product.name,
+      description: product.description,
+      price: product.price,
+      minPrice: product.minPrice,
+      stock: product.stock,
+      categoryId
+    }
+
+    const savedProduct = existingProduct
+      ? await prisma.product.update({
+          where: { id: existingProduct.id },
+          data: productData
+        })
+      : await prisma.product.create({
+          data: productData
+        })
+
+    console.log(`Upserted product: ${savedProduct.name} | Rp${savedProduct.price.toLocaleString('id-ID')}`)
   }
 
-  console.log('\n✅ Seeding selesai!')
-  console.log('─────────────────────────────────')
-  console.log('👤 admin@toko.com  | password: password | role: admin')
-  console.log('👤 user@toko.com   | password: password | role: user')
-  console.log('─────────────────────────────────')
+  console.log('Seeding selesai.')
+  console.log('admin@toko.com  | password: password | role: admin')
+  console.log('user@toko.com   | password: password | role: user')
 }
 
 main()
   .then(async () => {
     await prisma.$disconnect()
   })
-  .catch(async (e) => {
-    console.error(e)
+  .catch(async (error) => {
+    console.error(error)
     await prisma.$disconnect()
     process.exit(1)
   })

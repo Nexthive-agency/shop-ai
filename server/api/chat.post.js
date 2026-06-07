@@ -200,7 +200,7 @@ Jika ingin buat produk baru: {"action":"create_product","name":"NAMA","descripti
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      model: 'stepfun/step-3.5-flash:free',
+      model: 'openrouter/free',
       messages: aiMessages,
       stream: false
     })
